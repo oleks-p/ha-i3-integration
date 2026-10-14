@@ -1,0 +1,14 @@
+{
+  "domain": "i3_atom",
+  "name": "i3 Atom",
+  "codeowners": ["@oleks-p"],
+  "config_flow": true,
+  "dependencies": ["mqtt"],
+  "documentation": "https://github.com/oleks-p/ha-i3-integration",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/oleks-p/ha-i3-integration/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.2.0"
+}

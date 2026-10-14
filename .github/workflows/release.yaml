@@ -1,0 +1,20 @@
+name: release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    name: Check the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the manifest version matches the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(python3 -c "import json;print(json.load(open('custom_components/i3_atom/manifest.json'))['version'])")
+          if [ "$tag" != "$manifest" ]; then
+            echo "tag $tag does not match manifest version $manifest" >&2
+            exit 1
+          fi

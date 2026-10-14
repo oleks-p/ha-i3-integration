@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "i3 Atom",
+        "description": "i3 Atom is configured in YAML. Add an `i3_atom:` block to configuration.yaml and restart Home Assistant; the entry is created from it."
+      }
+    },
+    "abort": {
+      "already_configured": "i3 Atom is already set up.",
+      "single_instance_allowed": "i3 Atom is already set up.",
+      "yaml_only": "i3 Atom is configured in YAML. Add an `i3_atom:` block to configuration.yaml and restart Home Assistant; the entry is created from it."
+    }
+  },
+  "services": {
+    "reload": {
+      "name": "Reload",
+      "description": "Re-reads the i3_atom: block from the YAML configuration and reloads the integration."
+    }
+  }
+}
