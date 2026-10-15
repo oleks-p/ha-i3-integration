@@ -356,6 +356,11 @@ class EntitySpec:
     writes: dict[str, str] = field(default_factory=dict)
     options: dict = field(default_factory=dict)
     icon: str | None = None
+    #: Entity REGISTRY facts, not entity state: the area this entity belongs to
+    #: (by NAME, because that is what a person writes and what a descriptor
+    #: carries) and its voice aliases. Applied when the entity is added.
+    area: str | None = None
+    aliases: tuple[str, ...] = ()
 
     def controllers(self) -> set[str]:
         """Every controller this entity depends on.

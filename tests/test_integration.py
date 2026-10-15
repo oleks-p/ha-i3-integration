@@ -201,6 +201,72 @@ async def test_a_restored_measurement_still_goes_through_the_range_guard(
     assert hass.states.get("sensor.hall_temperature").state == "unknown"
 
 
+async def test_an_entity_lands_in_its_declared_area(hass, setup_i3):
+    """The area comes from the configuration, not from a later sync.
+
+    Home Assistant keeps the area in the entity registry and no YAML platform
+    can set one, so this used to be applied afterwards by a separate tool over
+    the websocket API - a step that is easy to skip, and an installation that
+    skipped it had every entity in no area, which breaks area-scoped views,
+    automations and voice.
+
+    The area is named rather than identified, and one that does not exist yet
+    is created.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    lamp = {**DIMMER, "area": "Hallway", "aliases": ["Hall light", "Передпокій"]}
+    await setup_i3(_conf(lamp))
+
+    entry = er.async_get(hass).async_get("light.hall_strip")
+    assert entry is not None
+    area = ar.async_get(hass).async_get_area(entry.area_id)
+    assert area is not None and area.name == "Hallway"
+    assert set(entry.aliases) == {"Hall light", "Передпокій"}
+
+
+async def test_an_existing_area_is_reused_not_duplicated(hass, setup_i3):
+    """Two entities in one room must not make two rooms, and a room somebody
+    already made by hand is the one they join."""
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    areas = ar.async_get(hass)
+    made = areas.async_create("Hallway")
+
+    second = {**DIMMER, "unique_id": "i3_A1B2_pwm_25",
+              "object_id": "hall_strip_2", "name": "Hall strip 2",
+              "reads": {"state": "A1B2/pwm/25/value"},
+              "writes": {"command": "A1B2/pwm/25/set"}, "area": "Hallway"}
+    await setup_i3(_conf({**DIMMER, "area": "Hallway"}, second))
+
+    registry = er.async_get(hass)
+    ids = {registry.async_get(e).area_id
+           for e in ("light.hall_strip", "light.hall_strip_2")}
+    assert ids == {made.id}
+    assert len([a for a in areas.async_list_areas() if a.name == "Hallway"]) == 1
+
+
+async def test_an_entity_with_no_area_declared_is_left_alone(hass, setup_i3):
+    """Silence in the configuration is not an instruction to clear anything.
+
+    Most entities here name no area, and an absent key must not be read as
+    "no area" - that would have this integration wipe an assignment somebody
+    made deliberately in the interface.
+    """
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import entity_registry as er
+
+    await setup_i3(_conf(DIMMER))
+    registry = er.async_get(hass)
+    chosen = ar.async_get(hass).async_create("Somewhere else")
+    registry.async_update_entity("light.hall_strip", area_id=chosen.id)
+
+    await setup_i3(_conf(DIMMER))
+    assert registry.async_get("light.hall_strip").area_id == chosen.id
+
+
 async def test_a_mapped_sensor_is_an_enum_and_its_value_lands(hass, setup_i3):
     """Options without the enum device class were refused on every write, so
     the entity read `unknown` while its topic published normally."""

@@ -490,6 +490,46 @@ logger:
     custom_components.i3_atom: info
 ```
 
+## Areas and aliases
+
+An entity's **area** and its voice **aliases** live in Home Assistant's entity
+registry, and no YAML platform can set either. An integration that owns its
+entities can, so both are declared per entity and applied when the entity is
+added:
+
+```yaml
+i3_atom:
+  entities:
+    - platform: light
+      unique_id: i3_A1B2_pwm_24
+      object_id: hall_strip
+      name: Світильники передпокій
+      area: Передпокій
+      aliases: ["Hallway lights"]
+      reads: {state: A1B2/pwm/24/value}
+      writes: {command: A1B2/pwm/24/set}
+```
+
+- The area is named, not identified. A name that does not exist yet is
+  created; one that does is reused, so a room somebody made by hand is the
+  room these entities join.
+- The configuration is the source of truth, the same way it is for `name`: a
+  value that differs is written on the next start. A change made by hand in
+  the interface is therefore put back.
+- **An absent key changes nothing.** Most entities name no area, and silence
+  is not an instruction to clear one - an assignment made deliberately in the
+  interface survives.
+
+Before this, the only way to set them was a separate tool talking to the
+websocket API after the entities existed. That made a rebuild a procedure whose
+last step is the one people forget, and an installation that skipped it had
+every entity in no area at all.
+
+## Upgrading from 0.3
+
+- `area` and `aliases` are accepted per entity and applied to the registry on
+  start. Nothing changes for an entity that declares neither.
+
 ## Upgrading from 0.2
 
 - Measurements are restored on start. A `sensor` without `map` comes back with

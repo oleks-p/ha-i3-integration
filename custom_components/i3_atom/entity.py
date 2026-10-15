@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
@@ -131,6 +132,7 @@ class I3Entity(RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        self._apply_registry_facts()
         self.async_on_remove(self._hub.listen(self._spec.unique_id, self._hub_changed))
         self.async_on_remove(self._cancel_assumption)
         # Restore first, then let any live payload replace it. Subscriptions
@@ -140,6 +142,48 @@ class I3Entity(RestoreEntity):
         # entity `unknown` whenever the first thing heard was silence.
         await self._async_restore()
         self._read_points()
+
+    def _apply_registry_facts(self) -> None:
+        """Put the configured area and aliases on this entity's registry row.
+
+        The area and the voice aliases live in the entity REGISTRY, not on the
+        entity, and no YAML platform can set either - which is why they used to
+        be applied afterwards by a separate tool talking to the websocket API.
+        That made a rebuild a four-step procedure in which the fourth step was
+        the one everybody forgets, and an installation that skipped it had
+        every entity in no area at all.
+
+        The configuration is the source of truth, exactly as it is for the
+        name: a value that differs is written. The cost is that a change made
+        by hand in the interface is put back on the next start, which is the
+        same bargain the entity's name has always made here.
+
+        The area is named rather than identified, because a name is what a
+        person writes; one that does not exist yet is created, which is what
+        the tool this replaces did too.
+        """
+        entry = self.registry_entry
+        if entry is None:
+            return
+        registry = er.async_get(self.hass)
+        fields: dict = {}
+
+        want_aliases = set(self._spec.aliases)
+        if want_aliases and set(entry.aliases) != want_aliases:
+            fields["aliases"] = want_aliases
+
+        if self._spec.area:
+            areas = ar.async_get(self.hass)
+            area = areas.async_get_area_by_name(self._spec.area)
+            if area is None:
+                area = areas.async_create(self._spec.area)
+                _LOGGER.info("created area %r for %s",
+                             self._spec.area, entry.entity_id)
+            if entry.area_id != area.id:
+                fields["area_id"] = area.id
+
+        if fields:
+            registry.async_update_entity(entry.entity_id, **fields)
 
     @property
     def available(self) -> bool:

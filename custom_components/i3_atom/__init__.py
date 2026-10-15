@@ -75,6 +75,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    CONF_ALIASES,
+    CONF_AREA,
     CONF_CLIENT_ID,
     CONF_CONTROLLERS,
     CONF_ENTITIES,
@@ -508,6 +510,8 @@ def _specs(conf: ConfigType) -> list[EntitySpec]:
             writes=raw[CONF_WRITES],
             options=raw[CONF_OPTIONS],
             icon=raw.get(CONF_ICON),
+            area=raw.get(CONF_AREA),
+            aliases=tuple(raw.get(CONF_ALIASES) or ()),
         )
         for raw in conf[CONF_ENTITIES]
     ])

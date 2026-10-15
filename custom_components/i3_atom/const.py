@@ -36,6 +36,8 @@ __all__ = ["vol"]
 
 DOMAIN = "i3_atom"
 
+CONF_ALIASES = "aliases"
+CONF_AREA = "area"
 CONF_CLIENT_ID = "client_id"
 CONF_CONTROLLERS = "controllers"
 CONF_ENTITIES = "entities"
@@ -85,6 +87,13 @@ ENTITY_SCHEMA = vol.Schema(
         # validates its own, as its OPTIONS, when its entities are built.
         vol.Optional(CONF_OPTIONS, default={}): dict,
         vol.Optional(CONF_ICON): cv.icon,
+        # Registry facts rather than entity facts: Home Assistant keeps the
+        # area and the voice aliases in the entity registry, and no YAML
+        # platform can set either. An integration that owns its entities can,
+        # which is why they are declared here instead of being applied
+        # afterwards by something that talks to the websocket API.
+        vol.Optional(CONF_AREA): cv.string,
+        vol.Optional(CONF_ALIASES, default=[]): [cv.string],
     }
 )
 
