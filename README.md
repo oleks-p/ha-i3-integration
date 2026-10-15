@@ -326,12 +326,24 @@ entity with invalid options is named in the log.
 
 ## What is restored
 
-The rule is whether a value moves on its own. A **control** or a **code**
-changes only when something acts on it, so its last value is the best answer
-available and is restored. A **measurement** has its own cadence and is
-replaced soon after start-up. Restoring one would present a reading from
-before the restart as current and draw a flat line into history, so it is not
-restored.
+Everything an entity last held comes back, measurements included.
+
+The reason is the transport. This controller publishes a leaf **only when that
+leaf changes** and retains nothing, so silence does not mean "no data", it
+means "unchanged" - and a restored reading is therefore not a stale guess about
+the present, it is the present, for as long as the controller stays quiet. The
+flat line a restored measurement draws into history is the one that actually
+happened.
+
+Until 0.3.0 a measurement was left blank to wait for its own cadence. On a
+steady house that cadence is hours: at one installation, twenty minutes after a
+restart, 17 of 22 numeric sensors were still blank and all ten underfloor
+thermostats were showing a setpoint with no room temperature beside it, because
+nothing in the house had changed enough to publish.
+
+Silence cannot distinguish a quiet controller from a dead one, and nothing here
+has to: availability follows the controller's heartbeat, so a controller that
+goes away takes its entities unavailable whatever they last held.
 
 | Entity | Restored after a restart |
 |---|---|
@@ -340,12 +352,12 @@ restored.
 | `binary_sensor` (point) | On/off |
 | `binary_sensor` (controller liveness) | Nothing: it follows the heartbeat |
 | `sensor` with `map` | The word, if the map still offers it |
-| `sensor` without `map` | Nothing: it waits for the next reading |
+| `sensor` without `map` | The reading, if `sane` still admits it |
 | `number` | The value, in the channel's own unit |
 | `select` | The option, if it is still offered |
 | `fan` | Percentage |
 | `valve` | Position |
-| `climate` | Mode, setpoints and fan mode. `current_temperature` is not restored |
+| `climate` | Mode, setpoints, fan mode and `current_temperature` |
 
 The restored value is applied first. A live payload that has already arrived
 then replaces it, unless that payload is only silence (`-nan`).
@@ -478,6 +490,13 @@ logger:
     custom_components.i3_atom: info
 ```
 
+## Upgrading from 0.2
+
+- Measurements are restored on start. A `sensor` without `map` comes back with
+  its last reading instead of `unknown`, and a `climate` entity comes back with
+  its `current_temperature`. A restored reading still has to pass `sane`.
+- Nothing else changes. No entity_id, unique_id or option moves.
+
 ## Upgrading from 0.1
 
 - An **i3 Atom** entry is created on the first start. Existing registry rows
@@ -515,5 +534,23 @@ python3.14 -m venv .venv
 - `tests/test_adapters.py` checks the adapter sources statically, for
   declaration faults that are cheaper to catch there.
 
-CI (`.github/workflows/`) runs hassfest, HACS validation, pytest and ruff. On a
-published release, it checks that the tag matches the manifest version.
+CI (`.github/workflows/`) runs hassfest, HACS validation, pytest and ruff.
+
+### Releasing
+
+HACS offers the newest **release**, not the newest tag. A tag pushed on its own
+leaves every installation still being offered the previous version - or the
+default branch, if nothing has been released yet - and nothing reports that as
+a problem, so the version people actually get is whatever was last published.
+
+So the tag is the whole procedure:
+
+```sh
+# bump "version" in custom_components/i3_atom/manifest.json first
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+`release.yaml` checks the tag against the manifest version, refuses the release
+if they disagree, and publishes it with generated notes if they match. A release
+created by hand in the web UI is gated by the same check.

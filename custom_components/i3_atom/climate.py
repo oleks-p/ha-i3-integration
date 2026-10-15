@@ -37,17 +37,30 @@ Options:
     sane                [low, high] outside which a setpoint payload is data
                         rather than a reading
 
-WHAT IS NOT RESTORED, and why. The mode and the setpoints are restored, because
-they only change when something acts and the last value is the best answer
-available. `current_temperature` is NOT: it is a measurement with its own
-cadence, and presenting a reading from before a restart as the temperature now
-is a different kind of wrong from showing none. It arrives on its own.
+WHAT IS RESTORED: the mode, the setpoints, the fan mode and, since 0.3.0, the
+measured temperature.
+
+`current_temperature` used to be left out, on the reasoning that a measurement
+has its own cadence and showing a reading from before the restart as the
+temperature now is a different kind of wrong than showing none. See
+`sensor.py`'s docstring for why that premise does not hold on this controller:
+it publishes a leaf only when the leaf changes, so a temperature it has not
+replaced is still the temperature.
+
+The cost of leaving it out was concentrated here rather than spread. A sensor
+with no value is one blank row; a thermostat with no `current_temperature` is a
+card that shows the setpoint and nothing else, and reads as broken. Measured at
+a reference installation 2026-10-15, twenty minutes after a restart on a steady
+midday house: every underfloor thermostat in the house, ten of them, reading
+`current_temperature: null`, with a room that had not changed temperature since
+10:21 and had no reason to publish.
 """
 from __future__ import annotations
 
 import logging
 
 from homeassistant.components.climate import (
+    ATTR_CURRENT_TEMPERATURE,
     ATTR_FAN_MODE,
     ATTR_HVAC_MODE,
     ATTR_TARGET_TEMP_HIGH,
@@ -286,4 +299,14 @@ class I3Climate(I3Entity, ClimateEntity):
         fan = last.attributes.get(ATTR_FAN_MODE)
         if fan is not None and (not self._fan_modes or fan in self._fan_modes):
             self._fan = fan
-        # current_temperature is deliberately absent: see the module docstring.
+        # The measurement, through the same guard and the same unit conversion
+        # as the setpoints above: it is an attribute in the shown unit, and
+        # `sane` is in Celsius like every other range in the configuration.
+        current = last.attributes.get(ATTR_CURRENT_TEMPERATURE)
+        if current is not None:
+            value = parse_bounded(
+                str(TemperatureConverter.convert(
+                    float(current), shown, UnitOfTemperature.CELSIUS)),
+                self._sane)
+            if value is not None:
+                self._current = value

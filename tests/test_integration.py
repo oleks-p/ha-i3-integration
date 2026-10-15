@@ -153,7 +153,17 @@ async def test_a_conflicting_duplicate_is_reported(hass, setup_i3, caplog):
 
 # ── restore ─────────────────────────────────────────────────────────────────
 
-async def test_controls_and_codes_come_back_measurements_do_not(hass, setup_i3):
+async def test_a_measurement_comes_back_like_a_control_does(hass, setup_i3):
+    """A quantity restores too, and the transport is why.
+
+    The controller publishes a leaf only when that leaf changes, so silence
+    means the value has not changed and a restored reading is the reading. The
+    rule used to be the other way round - a measurement was left blank to wait
+    for its own cadence - and on a steady house that cadence is hours: measured
+    at a reference installation, 17 of 22 numeric sensors still blank 20
+    minutes after a restart, with a buffer sensor last heard from 21 minutes
+    before it.
+    """
     mock_restore_cache(hass, [
         State("light.hall_strip", STATE_ON, {"brightness": 128}),
         State("sensor.valve_direction", "opening"),
@@ -171,6 +181,23 @@ async def test_controls_and_codes_come_back_measurements_do_not(hass, setup_i3):
     strip = hass.states.get("light.hall_strip")
     assert strip.state == STATE_ON and strip.attributes["brightness"] == 128
     assert hass.states.get("sensor.valve_direction").state == "opening"
+    assert hass.states.get("sensor.hall_temperature").state == "21.5"
+
+
+async def test_a_restored_measurement_still_goes_through_the_range_guard(
+        hass, setup_i3):
+    """`sane` is configuration, and it may have been tightened since the value
+    was written. A reading the current range would refuse as data must not come
+    back through the restore path when it could not come in through the live
+    one - an unconfigured channel's `-nan` is the case that matters.
+    """
+    mock_restore_cache(hass, [State("sensor.hall_temperature", "-500")])
+    measured = {"platform": "sensor", "unique_id": "i3_A1B2_adc_tempr_3",
+                "object_id": "hall_temperature", "name": "Hall temperature",
+                "reads": {"state": "A1B2/adc_tempr/3/value"},
+                "options": {"unit": "°C", "device_class": "temperature",
+                            "sane": [5, 40]}}
+    await setup_i3(_conf(measured))
     assert hass.states.get("sensor.hall_temperature").state == "unknown"
 
 
@@ -497,7 +524,14 @@ async def test_a_setpoint_echo_ends_the_assumption(hass, setup_i3):
     assert not state.attributes.get(ATTR_ASSUMED_STATE)
 
 
-async def test_climate_restores_its_targets(hass, setup_i3):
+async def test_climate_restores_its_targets_and_its_measurement(hass, setup_i3):
+    """The measured temperature comes back with the setpoints.
+
+    A sensor left blank is one empty row; a thermostat with no
+    `current_temperature` is a card showing a setpoint and nothing else, which
+    is what a reference installation had on ten thermostats at once twenty
+    minutes after a restart, on rooms that had no reason to publish.
+    """
     mock_restore_cache(hass, [State("climate.living_room", "heat_cool",
                                     {"target_temp_low": 19, "target_temp_high": 24,
                                      "current_temperature": 30})])
@@ -505,7 +539,7 @@ async def test_climate_restores_its_targets(hass, setup_i3):
     state = hass.states.get("climate.living_room")
     assert state.state == "heat_cool"
     assert (state.attributes["target_temp_low"], state.attributes["target_temp_high"]) == (19, 24)
-    assert state.attributes["current_temperature"] is None
+    assert state.attributes["current_temperature"] == 30
 
 
 # ── the other platforms ─────────────────────────────────────────────────────

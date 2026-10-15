@@ -15,24 +15,37 @@ Options:
                     some channel types a value far outside the plausible range
                     is how the channel says it has nothing.
 
-WHAT IS RESTORED, and the line that actually matters. It is not sensor versus
-control - it is whether the value moves on its own.
+WHAT IS RESTORED: everything this entity last held, quantities included.
 
-A QUANTITY has its own cadence and will be replaced shortly, so it is not
-restored: presenting a reading from before a restart as the value *now* is a
-different kind of wrong from presenting none, and it writes a flat line into
-history that never happened. A sensor of that kind starts empty and waits, and
-the wait is short.
+This reversed in 0.3.0, and the reasoning it replaced is worth keeping because
+it sounds right. It said: a quantity has its own cadence and will be replaced
+shortly, so restoring one presents a reading from before the restart as the
+value *now*, and writes a flat line into history that never happened. Only a
+mapped CODE - a valve's direction, a fan's actual speed - was restored, because
+a code only moves when something acts.
 
-A CODE does not move on its own. A valve's direction, a fan's actual speed, a
-unit's heat-or-cool - each changes only when something acts, so it behaves like
-a control and last-known is the best answer available. Left unrestored it is
-not "empty for a moment", it is empty until the next time that thing happens:
-a valve that finished opening before a restart reads `unknown` for as long as
-it then sits still, which on a mixing valve can be days.
+That argument borrows its premise from a polled source, where silence means no
+data. This controller is not polled. It publishes a leaf ONLY when that leaf
+changes, so silence means the value has not changed - and the restored reading
+is therefore not a guess about the present, it is the present, for exactly as
+long as the controller stays quiet. The flat line is not one that never
+happened; it is the one that did.
 
-So: a mapped reading restores, a numeric one does not. `map` is the declaration
-of which kind this is, which is why nothing else needs to be configured.
+Measured at a reference installation 2026-10-15, after a restart at 11:42 on a
+steady midday house: 17 of 22 numeric sensors still blank 20 minutes later,
+every underfloor thermostat reading `current_temperature: null`, and the buffer
+sensor - which had been publishing every 30 to 120 seconds while the heating
+ran that morning - last heard from at 11:21. Nothing was wrong. The house was
+simply not changing, which is the case where the old rule left a dashboard with
+no numbers on it for hours.
+
+The one thing silence cannot distinguish is a controller that has gone away,
+and that is already answered elsewhere: every entity's availability follows its
+controller's heartbeat, so a dead controller takes its entities unavailable
+whatever they last held. Restoring a reading never has to carry that job.
+
+`sane` still applies on the way back in, so a restored value that the current
+configuration would reject as data is dropped rather than resurrected.
 """
 from __future__ import annotations
 
@@ -116,10 +129,20 @@ class I3Sensor(I3Entity, SensorEntity):
             self._value = value
 
     def _restore(self, last) -> None:
-        # A code, not a quantity. See the module docstring for why that is the
-        # line. `last.state` is already the mapped word, and it is only taken
-        # back if it is still one this entity offers - a map that has since
-        # gained or lost a value should not resurrect a word that no longer
-        # means anything.
-        if self._map and last.state in set(self._map.values()):
-            self._value = last.state
+        # See the module docstring: the controller publishes on change, so a
+        # value it has not replaced is still the value.
+        if self._map:
+            # `last.state` is already the mapped word, and it is only taken
+            # back if it is still one this entity offers - a map that has since
+            # gained or lost a value should not resurrect a word that no longer
+            # means anything.
+            if last.state in set(self._map.values()):
+                self._value = last.state
+            return
+        # A quantity goes back through the same guard a live payload does, so
+        # a reading the current `sane` range would refuse as data is dropped
+        # rather than resurrected - the range is part of the configuration and
+        # may have been tightened since this value was written.
+        value = parse_bounded(last.state, self._sane)
+        if value is not None:
+            self._value = value
