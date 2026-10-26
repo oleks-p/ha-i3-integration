@@ -361,6 +361,11 @@ class EntitySpec:
     #: carries) and its voice aliases. Applied when the entity is added.
     area: str | None = None
     aliases: tuple[str, ...] = ()
+    #: Key into `translations/<lang>.json` under `entity.<platform>`. Where it
+    #: is set the entity is named by Home Assistant from that bundle, in the
+    #: language of whoever is looking; where it is not, `name` is used as
+    #: written. See I3Entity.__init__ for why the two are exclusive.
+    translation_key: str | None = None
 
     def controllers(self) -> set[str]:
         """Every controller this entity depends on.

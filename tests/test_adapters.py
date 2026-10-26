@@ -77,3 +77,25 @@ def test_every_adapter_is_a_platform_the_schema_accepts():
     names = {p.stem for p in ADAPTERS}
     assert names == set(PLATFORMS)
     assert names <= {p.value for p in Platform}
+
+
+def test_a_name_and_a_translation_key_are_never_both_set():
+    """Home Assistant returns `_attr_name` before it considers a translation.
+
+    So an entity that sets both keeps the configuration's single string, and
+    the translation bundle it also declares does nothing - which reads as a
+    broken bundle rather than as a line of code choosing one over the other.
+    The two assignments must therefore be on opposite branches of the same
+    `if`, which is what this checks: neither may sit at the body's top level
+    where both would run.
+    """
+    tree = ast.parse((PACKAGE / "entity.py").read_text())
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.FunctionDef) and node.name == "__init__"):
+            continue
+        flat = {t.attr for stmt in node.body if isinstance(stmt, ast.Assign)
+                for t in stmt.targets
+                if isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                and t.value.id == "self"}
+        both = {"_attr_name", "_attr_translation_key"} & flat
+        assert len(both) < 2, f"both set unconditionally in __init__: {both}"

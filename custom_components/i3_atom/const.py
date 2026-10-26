@@ -46,6 +46,7 @@ CONF_HEARTBEAT_TIMEOUT = "heartbeat_timeout_s"
 CONF_OBJECT_ID = "object_id"
 CONF_OPTIONS = "options"
 CONF_READS = "reads"
+CONF_TRANSLATION_KEY = "translation_key"
 CONF_REANNOUNCE = "reannounce"
 CONF_SUPPRESS_VENDOR_DISCOVERY = "suppress_vendor_discovery"
 CONF_WRITES = "writes"
@@ -94,6 +95,14 @@ ENTITY_SCHEMA = vol.Schema(
         # afterwards by something that talks to the websocket API.
         vol.Optional(CONF_AREA): cv.string,
         vol.Optional(CONF_ALIASES, default=[]): [cv.string],
+        # The key its NAME is looked up under, in this integration's own
+        # translation bundle. Declared per entity because the name is the one
+        # thing a household sees in its own language: with a key, the name
+        # follows the VIEWER's profile language instead of being the single
+        # string somebody wrote into the configuration. `name` is still
+        # required - it is what a site without a translation bundle shows, and
+        # what the logs and any error about this entity name it by.
+        vol.Optional(CONF_TRANSLATION_KEY): cv.string,
     }
 )
 

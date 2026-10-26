@@ -18,6 +18,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.typing import UNDEFINED
 
 from .const import DOMAIN, options_schema, vol
 from .model import ASSUMED_WINDOW_S, EntitySpec, RegistryRow, channel_of, plan_entity_id_claims
@@ -107,7 +108,17 @@ class I3Entity(RestoreEntity):
         self._hub = hub
         self._spec = spec
         self._attr_unique_id = spec.unique_id
-        self._attr_name = spec.name
+        # EXCLUSIVE, and not by preference: Home Assistant returns `_attr_name`
+        # whenever it is set, before it ever considers a translation. Setting
+        # both would silently keep the configuration's single string and make
+        # the bundle look broken. So a key means the name comes from the
+        # bundle, in the viewer's own language, and no key means it comes from
+        # the configuration exactly as written.
+        if spec.translation_key:
+            self._attr_has_entity_name = True
+            self._attr_translation_key = spec.translation_key
+        else:
+            self._attr_name = spec.name
         self._attr_icon = spec.icon
         # On its controller's device only when asked: Home Assistant names an
         # entity that has a device after the device as well, so joining one
@@ -142,6 +153,31 @@ class I3Entity(RestoreEntity):
         # entity `unknown` whenever the first thing heard was silence.
         await self._async_restore()
         self._read_points()
+
+    @property
+    def name(self):
+        """The translated name, or the configured one where there is none.
+
+        A bundle can go missing for an ordinary reason: it lives inside this
+        integration's own directory, so updating the integration replaces the
+        file the site's names were merged into. Without this, every entity
+        then falls back to Home Assistant's own last resort, which is the
+        object id with its underscores turned into spaces - `hall sconce` - and
+        `friendly_name` is dropped from the state altogether.
+
+        So the configured `name` stays what it always was: the name this
+        entity has when nothing better is available. When the bundle is there
+        it is never consulted.
+
+        UNDEFINED and not None is what a missing translation gives back, which
+        is worth stating because the two are easy to confuse and only one of
+        them happens: a first version of this tested for None, changed
+        nothing, and looked from the outside exactly like no fallback at all.
+        """
+        translated = super().name
+        if translated is None or translated is UNDEFINED:
+            return self._spec.name
+        return translated
 
     def _apply_registry_facts(self) -> None:
         """Put the configured area and aliases on this entity's registry row.

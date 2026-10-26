@@ -87,6 +87,7 @@ from .const import (
     CONF_READS,
     CONF_REANNOUNCE,
     CONF_SUPPRESS_VENDOR_DISCOVERY,
+    CONF_TRANSLATION_KEY,
     CONF_WRITES,
     CONFIG_SCHEMA,  # noqa: F401  - Home Assistant reads this off the module
     DOMAIN,
@@ -512,6 +513,7 @@ def _specs(conf: ConfigType) -> list[EntitySpec]:
             icon=raw.get(CONF_ICON),
             area=raw.get(CONF_AREA),
             aliases=tuple(raw.get(CONF_ALIASES) or ()),
+            translation_key=raw.get(CONF_TRANSLATION_KEY),
         )
         for raw in conf[CONF_ENTITIES]
     ])

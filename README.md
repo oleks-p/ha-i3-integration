@@ -175,7 +175,8 @@ so one entity or controller can be listed in several of them:
 | `platform` | yes | One of `binary_sensor`, `climate`, `fan`, `light`, `number`, `select`, `sensor`, `switch`, `valve`. Anything else fails the configuration check |
 | `unique_id` | yes | Registry identity. Reuse the unique_id of the `mqtt:` entity being replaced: its old row is then recognised and released, and the entity_id, with its history, carries over |
 | `object_id` | yes | Fixes the entity_id as `<platform>.<object_id>` (see [Entity IDs](#entity-ids)) |
-| `name` | yes | Friendly name |
+| `name` | yes | Friendly name. Used as written unless `translation_key` is set, and then only as the fallback when no translation resolves |
+| `translation_key` | no | Names the entity from this integration's translation bundle instead, in the language of whoever is looking (see [Translated entity names](#translated-entity-names)) |
 | `icon` | no | `mdi:` icon |
 | `reads` | no | Role → point to subscribe to |
 | `writes` | no | Role → point to publish commands on |
@@ -575,6 +576,49 @@ python3.14 -m venv .venv
   declaration faults that are cheaper to catch there.
 
 CI (`.github/workflows/`) runs hassfest, HACS validation, pytest and ruff.
+
+### Translated entity names
+
+Home Assistant stores one display name per entity, so by default `name` decides
+what every viewer reads, whatever language they use the interface in. An
+integration can do better: with `translation_key` set, Home Assistant resolves
+the name from this integration's own bundle, per the profile language of
+whoever is looking.
+
+```yaml
+i3_atom:
+  entities:
+    - platform: light
+      unique_id: i3_A1B2_out_9
+      object_id: hall_sconce
+      name: Hall sconce
+      translation_key: hall_sconce
+      writes: {command: A1B2/out/9/set}
+```
+
+```json
+// custom_components/i3_atom/translations/uk.json
+{"entity": {"light": {"hall_sconce": {"name": "Світильники передпокій"}}}}
+```
+
+The key is scoped to the platform, so `light.hall_sconce` and
+`sensor.hall_sconce` are separate keys. Using the `object_id` as the key is the
+obvious choice and keeps the two from drifting.
+
+**`name` and `translation_key` are not alternatives you pick between at
+runtime.** Home Assistant returns `_attr_name` before it ever consults a
+bundle, so an entity cannot carry both - with a key, the configured `name` is
+held back and used only if the lookup produces nothing. That fallback matters
+more than it sounds: the bundle lives in this directory, so **updating the
+integration replaces it**, and without the fallback every entity would come
+back as its object id with the underscores turned into spaces, with
+`friendly_name` dropped from the state entirely. With it, a missing bundle is
+simply the old behaviour - one language for everybody - which is a soft
+failure you can see and fix rather than a board full of `hall sconce`.
+
+So a bundle that is generated per installation has to be reinstalled after
+every update of this integration. If you generate yours, make that check part
+of the upgrade.
 
 ### Releasing
 

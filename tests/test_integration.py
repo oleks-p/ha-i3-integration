@@ -119,6 +119,38 @@ async def test_grouping_by_controller_puts_each_entity_on_its_device(hass, setup
     assert hass.states.get("light.hall_sconce").name == "i3 A1B2 Hall sconce"
 
 
+async def test_a_translation_key_hands_the_name_to_home_assistant(hass, setup_i3):
+    """The name a household reads should be in the household's language.
+
+    With a key the entity carries no name of its own: Home Assistant resolves
+    it from this integration's translation bundle, per the VIEWER's profile,
+    so one instance serves a Ukrainian household and an English engineer
+    without two of everything. The registry is where that is visible - the
+    resolved string is composed in the frontend, in whatever language asked
+    for it, and a backend test cannot see it in any one language.
+    """
+    keyed = {**RELAY, "translation_key": "hall_sconce"}
+    await setup_i3(_conf(keyed, ONLINE))
+    row = er.async_get(hass).async_get("light.hall_sconce")
+    assert row is not None
+    assert row.translation_key == "hall_sconce"
+    assert row.has_entity_name is True
+    # The configured string stays reachable as the registry's original name,
+    # which is what the frontend falls back to when the bundle has no entry
+    # for this key - and a bundle living inside the integration's own
+    # directory goes missing every time the integration is updated.
+    assert row.original_name == "Hall sconce"
+    assert hass.states.get("light.hall_sconce").name == "Hall sconce"
+
+
+async def test_without_a_key_the_configured_name_is_used_as_written(hass, setup_i3):
+    """The key is optional, and a site that has no bundle must be unaffected."""
+    await setup_i3(_conf(RELAY, ONLINE))
+    row = er.async_get(hass).async_get("light.hall_sconce")
+    assert row.translation_key is None and row.has_entity_name is False
+    assert hass.states.get("light.hall_sconce").name == "Hall sconce"
+
+
 async def test_a_platform_this_build_does_not_ship_is_a_configuration_error(hass, mqtt_mock):
     bad = {**RELAY, "platform": "cover"}
     assert not await async_setup_component(hass, DOMAIN, {DOMAIN: _conf(bad)})
