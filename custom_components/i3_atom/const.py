@@ -96,12 +96,12 @@ ENTITY_SCHEMA = vol.Schema(
         vol.Optional(CONF_AREA): cv.string,
         vol.Optional(CONF_ALIASES, default=[]): [cv.string],
         # The key its NAME is looked up under, in this integration's own
-        # translation bundle. Declared per entity because the name is the one
-        # thing a household sees in its own language: with a key, the name
-        # follows the VIEWER's profile language instead of being the single
-        # string somebody wrote into the configuration. `name` is still
-        # required - it is what a site without a translation bundle shows, and
-        # what the logs and any error about this entity name it by.
+        # translation bundle. With a key the name follows the INSTANCE's
+        # language setting rather than being the single string somebody wrote
+        # into the configuration - not the viewer's, which is the reading to
+        # resist: see README, "Translated entity names". `name` is still
+        # required - it is what an installation with no bundle shows, and what
+        # the logs and any error about this entity name it by.
         vol.Optional(CONF_TRANSLATION_KEY): cv.string,
     }
 )

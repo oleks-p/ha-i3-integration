@@ -176,7 +176,7 @@ so one entity or controller can be listed in several of them:
 | `unique_id` | yes | Registry identity. Reuse the unique_id of the `mqtt:` entity being replaced: its old row is then recognised and released, and the entity_id, with its history, carries over |
 | `object_id` | yes | Fixes the entity_id as `<platform>.<object_id>` (see [Entity IDs](#entity-ids)) |
 | `name` | yes | Friendly name. Used as written unless `translation_key` is set, and then only as the fallback when no translation resolves |
-| `translation_key` | no | Names the entity from this integration's translation bundle instead, in the language of whoever is looking (see [Translated entity names](#translated-entity-names)) |
+| `translation_key` | no | Names the entity from this integration's translation bundle instead of from `name`, in the instance's language (see [Translated entity names](#translated-entity-names)) |
 | `icon` | no | `mdi:` icon |
 | `reads` | no | Role → point to subscribe to |
 | `writes` | no | Role → point to publish commands on |
@@ -579,11 +579,20 @@ CI (`.github/workflows/`) runs hassfest, HACS validation, pytest and ruff.
 
 ### Translated entity names
 
-Home Assistant stores one display name per entity, so by default `name` decides
-what every viewer reads, whatever language they use the interface in. An
-integration can do better: with `translation_key` set, Home Assistant resolves
-the name from this integration's own bundle, per the profile language of
-whoever is looking.
+With `translation_key` set, Home Assistant resolves the entity's name from this
+integration's own translation bundle instead of taking `name` as written. The
+name then follows the instance's language setting rather than being fixed by
+whoever wrote the configuration, so one configuration can serve installations
+in different languages.
+
+**It does not vary per viewer.** `translation_key` is how an integration names
+its entities, and it is tempting to read it as naming them per reader - the
+translations really are served to the frontend per profile. The displayed name
+is not: on Home Assistant 2026.10.1 the overview tiles and the more-info header
+show the name the backend resolved, in `homeassistant.language`, and a viewer
+with a different profile language sees that same name. Measured three ways -
+core `en` with a `uk` profile, core `en` with an `en` profile, core `uk` with
+an `en` profile - and the displayed name tracked the core language every time.
 
 ```yaml
 i3_atom:
