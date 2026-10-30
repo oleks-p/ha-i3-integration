@@ -49,8 +49,9 @@ custom_components/i3_atom/
   entity.py        Base entity: availability, restore-on-start, the command echo window
   const.py         Configuration schema and the validators adapters build options from
   config_flow.py   The config entry, created from YAML
-  binary_sensor.py climate.py fan.py light.py number.py
-  select.py sensor.py switch.py valve.py              Platform adapters
+  binary_sensor.py button.py climate.py cover.py fan.py
+  light.py number.py select.py sensor.py switch.py
+  valve.py                                            Platform adapters
   brand/           Icon and logo, light and dark, from i3 Engineering's own logo
 ```
 
@@ -172,7 +173,7 @@ so one entity or controller can be listed in several of them:
 
 | Key | Required | Meaning |
 |---|---|---|
-| `platform` | yes | One of `binary_sensor`, `climate`, `fan`, `light`, `number`, `select`, `sensor`, `switch`, `valve`. Anything else fails the configuration check |
+| `platform` | yes | One of `binary_sensor`, `button`, `climate`, `cover`, `fan`, `light`, `number`, `select`, `sensor`, `switch`, `valve`. Anything else fails the configuration check |
 | `unique_id` | yes | Registry identity. Reuse the unique_id of the `mqtt:` entity being replaced: its old row is then recognised and released, and the entity_id, with its history, carries over |
 | `object_id` | yes | Fixes the entity_id as `<platform>.<object_id>` (see [Entity IDs](#entity-ids)) |
 | `name` | yes | Friendly name. Used as written unless `translation_key` is set, and then only as the fallback when no translation resolves |
@@ -209,12 +210,14 @@ to depend on a controller it binds no point on.
 |---|---|---|---|
 | `light` | `state` | `command` | `brightness_scale`: the channel's full-scale value. If set, the light is dimmable; if not, it is on/off |
 | `switch` | `state` | `command` | `device_class` (`outlet`, `switch`), `invert` (on at zero) |
-| `binary_sensor` | `state` | none | `device_class`, `invert` (report zero as on). With `controller: <ID>` and no reads, it reports that controller's liveness instead |
+| `binary_sensor` | `state` | none | `device_class`, `invert` (report zero as on), `on_value` (the exact payload that means on - needed for the `switch` input, which publishes 1 or 2 and never 0, so "non-zero is on" reports every contact as permanently triggered). With `controller: <ID>` and no reads, it reports that controller's liveness instead |
 | `sensor` | `state` | none | `unit`, `device_class`, `state_class`, `precision`; `sane: [low, high]` to discard implausible readings; `map: {payload: word}` for a coded value, which turns it into an enum sensor (unit and state class are then dropped) |
 | `number` | `state` | `command` | `min` (0), `max` (100), `step` (1), `unit`, `device_class`, `mode` (`auto`, `box`, `slider`), `sane` |
 | `select` | `state` | `command` | `options`: the words offered; `map`: `{payload: word}`, used in both directions, and every word it gives must be in `options` |
 | `fan` | `state` | `command` | `speed_range_max`: the channel's full-scale value (default `100`). Zero is off; turning on without a percentage restores the last non-zero level. A channel coarser than a percent offers only its own steps |
 | `valve` | `state` | `command` (optional) | `position_scale`: the channel's full-scale value (default `100`); `device_class` (`water`, `gas`). Without `command` the valve is shown but not driven |
+| `cover` | `state` (position), `direction`, `tilt` | `command` (position), `stop`, `tilt` | `position_scale` (default `100`), `tilt_scale` (default `90`), `device_class` (`blind`, `curtain`, `shade`, `shutter`, ...). Each write role adds its own controls, so a cover with no `stop` simply has no stop button. `direction` reads 1 as opening and 2 as closing; anything else, including the 0 a settled blind publishes, is not travelling |
+| `button` | none | `command` | `payload` (default `"1"`), `device_class`. A momentary output: one publish per press and no state between them |
 | `climate` | `mode`, `setpoint`, `setpoint_low`, `setpoint_high`, `current_temperature`, `fan_mode` | `mode`, `power`, `setpoint`, `setpoint_low`, `setpoint_high`, `fan_mode` | `modes`, `mode_map`, `mode_from_presence` + `on_mode`, `fan_modes`, `fan_mode_map`, `min_temp` (7), `max_temp` (35), `temp_step` (0.5), `sane` |
 
 A non-zero level never rounds to zero: the lowest brightness on a coarse dimmer
@@ -358,6 +361,8 @@ goes away takes its entities unavailable whatever they last held.
 | `select` | The option, if it is still offered |
 | `fan` | Percentage |
 | `valve` | Position |
+| `cover` | Position and tilt. NOT travel: a blind that was moving when Home Assistant stopped is not moving now |
+| `button` | Nothing to restore - a press is not a state |
 | `climate` | Mode, setpoints, fan mode and `current_temperature` |
 
 The restored value is applied first. A live payload that has already arrived
@@ -525,6 +530,23 @@ Before this, the only way to set them was a separate tool talking to the
 websocket API after the entities existed. That made a rebuild a procedure whose
 last step is the one people forget, and an installation that skipped it had
 every entity in no area at all.
+
+## Upgrading from 0.5
+
+- Two new platforms, `cover` and `button`. Nothing changes for an installation
+  that declares neither; both are additive, and no existing entity_id,
+  unique_id or option moves.
+- `cover` drives an i3 `blinds`, `rot_blinds` or `rot_blinds_v2` block. Read
+  its `position` leaf and not `main`: the vendor documents `main` on a roller
+  blind as 1-100 %, so it cannot express a closed blind, and on the rotation
+  types it is two packed bytes rather than a percentage.
+- `button` drives an `out_pulse` channel. It has no reads, deliberately - see
+  the platform table.
+- `binary_sensor` gains `on_value`. Nothing changes for an entity that does
+  not set it; a `switch` input needs it, because that channel publishes 1 or 2
+  and never 0 - and the vendor's coding is per device, 1 being the active
+  value for all of them except an opening sensor, where 1 is closed and 2 is
+  open.
 
 ## Upgrading from 0.3
 

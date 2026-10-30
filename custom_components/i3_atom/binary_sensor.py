@@ -17,6 +17,16 @@ Options:
     controller       makes this a controller-liveness entity
     device_class     passed through
     invert           report zero as on
+    on_value         the exact payload that means on, for a channel whose
+                     coding is neither 1/0 nor 0/1
+
+`on_value` exists because the i3's `switch` input - every dry contact it
+reads - publishes 1 or 2 and NEVER zero, so "non-zero is on" reports every
+contact in the house as permanently triggered: a quiet motion detector
+publishes 2. The vendor's coding is also per device rather than per channel
+type, 1 being the active value for all of them except an opening sensor,
+where 1 is closed and 2 is open. Nothing on the bus knows which device is
+wired to a terminal, so the value is named in the configuration.
 """
 from __future__ import annotations
 
@@ -54,12 +64,14 @@ class I3BinarySensor(I3Entity, BinarySensorEntity):
     OPTIONS = options_schema({
         vol.Optional("device_class"): DEVICE_CLASSES_SCHEMA,
         vol.Optional("invert", default=False): cv.boolean,
+        vol.Optional("on_value"): vol.Coerce(float),
     })
 
     def __init__(self, hub, spec, *, claimed: bool = True) -> None:
         super().__init__(hub, spec, claimed=claimed)
         self._attr_device_class = self._options.get("device_class")
         self._invert = self._options["invert"]
+        self._on_value = self._options.get("on_value")
         self._is_on: bool | None = None
 
     @property
@@ -69,6 +81,12 @@ class I3BinarySensor(I3Entity, BinarySensorEntity):
     def _read_points(self) -> None:
         value = parse_number(self._payload("state") or "")
         if value is None:
+            return
+        if self._on_value is not None:
+            # An exact match, and `invert` is not applied on top: the
+            # configuration already names the value that means on, so a second
+            # flag turning it round would be two places saying one thing.
+            self._is_on = value == self._on_value
             return
         self._is_on = (value <= 0) if self._invert else (value > 0)
 

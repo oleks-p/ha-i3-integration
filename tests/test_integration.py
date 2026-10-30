@@ -152,7 +152,11 @@ async def test_without_a_key_the_configured_name_is_used_as_written(hass, setup_
 
 
 async def test_a_platform_this_build_does_not_ship_is_a_configuration_error(hass, mqtt_mock):
-    bad = {**RELAY, "platform": "cover"}
+    # `lock` and not `cover`, which this build does ship now. The example has
+    # to be a platform with no adapter file, because PLATFORMS is derived from
+    # the files present - so the day one is written, this test starts asserting
+    # that a valid configuration is rejected.
+    bad = {**RELAY, "platform": "lock"}
     assert not await async_setup_component(hass, DOMAIN, {DOMAIN: _conf(bad)})
 
 
@@ -718,6 +722,144 @@ async def test_a_valve_reports_its_opening_on_its_own_scale(hass, setup_i3, mqtt
     assert _published(mqtt_mock, f"{COMMANDS}/C3D4/twv/1/set") == ["0"]
     await _payload(hass, "C3D4/twv/1/position", "0")
     assert hass.states.get("valve.mixer").state == "closed"
+
+
+async def test_a_contact_that_has_no_zero_is_read_by_its_own_value(hass, setup_i3):
+    """The i3's `switch` input publishes 1 or 2 and never 0.
+
+    "Non-zero is on" therefore reports every dry contact in the house as
+    permanently triggered - a quiet motion detector publishes 2 - and nothing
+    anywhere says otherwise. The coding is also per device: 1 is the active
+    value for all of them except an opening sensor, where 1 is closed and 2 is
+    open, so the value that means on is named in the configuration.
+    """
+    pir = {"platform": "binary_sensor", "unique_id": "i3_A1B2_switch_15",
+           "object_id": "hall_motion", "name": "Hall motion",
+           "reads": {"state": "A1B2/switch/15/value"},
+           "options": {"device_class": "motion", "on_value": 1}}
+    door = {"platform": "binary_sensor", "unique_id": "i3_A1B2_switch_5",
+            "object_id": "front_door", "name": "Front door",
+            "reads": {"state": "A1B2/switch/5/value"},
+            "options": {"device_class": "opening", "on_value": 2}}
+    await setup_i3(_conf(pir, door))
+    await _payload(hass, "A1B2/switch/15/value", "2")
+    await _payload(hass, "A1B2/switch/5/value", "2")
+    assert hass.states.get("binary_sensor.hall_motion").state == "off"
+    assert hass.states.get("binary_sensor.front_door").state == "on"
+    await _payload(hass, "A1B2/switch/15/value", "1")
+    await _payload(hass, "A1B2/switch/5/value", "1")
+    assert hass.states.get("binary_sensor.hall_motion").state == "on"
+    assert hass.states.get("binary_sensor.front_door").state == "off"
+
+
+async def test_a_relay_read_as_a_binary_still_treats_non_zero_as_on(hass, setup_i3):
+    """`on_value` is additive. A relay mirrored as a sensor - every pump on
+    the plant board - says nothing, and keeps the behaviour it had."""
+    pump = {"platform": "binary_sensor", "unique_id": "i3_A1B2_out_3_pump",
+            "object_id": "pump", "name": "Pump",
+            "reads": {"state": "A1B2/out/3/value"}}
+    await setup_i3(_conf(pump))
+    await _payload(hass, "A1B2/out/3/value", "1")
+    assert hass.states.get("binary_sensor.pump").state == "on"
+    await _payload(hass, "A1B2/out/3/value", "0")
+    assert hass.states.get("binary_sensor.pump").state == "off"
+
+
+BLIND = {"platform": "cover", "unique_id": "i3_A1B2_blinds_1", "object_id": "living_blind",
+         "name": "Living blind",
+         "reads": {"state": "A1B2/blinds/1/position",
+                   "direction": "A1B2/blinds/1/direction"},
+         "writes": {"command": "A1B2/blinds/1/position",
+                    "stop": "A1B2/blinds/1/stop"}}
+
+
+async def test_a_cover_reports_its_position_and_is_driven_by_it(hass, setup_i3, mqtt_mock):
+    await setup_i3(_conf(BLIND))
+    await _payload(hass, "A1B2/blinds/1/position", "68")
+    state = hass.states.get("cover.living_blind")
+    assert state.state == "open" and state.attributes["current_position"] == 68
+    await hass.services.async_call("cover", "close_cover",
+                                   {"entity_id": "cover.living_blind"}, blocking=True)
+    assert _published(mqtt_mock, f"{COMMANDS}/A1B2/blinds/1/position") == ["0"]
+    await _payload(hass, "A1B2/blinds/1/position", "0")
+    assert hass.states.get("cover.living_blind").state == "closed"
+
+
+async def test_a_cover_stops_on_its_own_leaf(hass, setup_i3, mqtt_mock):
+    """Stop is a different leaf from position, and it claims no position.
+
+    A blind halted halfway is somewhere nobody knows until the channel says
+    so, which is the whole reason the controller reports position at all.
+    """
+    await setup_i3(_conf(BLIND))
+    await _payload(hass, "A1B2/blinds/1/position", "40")
+    await hass.services.async_call("cover", "stop_cover",
+                                   {"entity_id": "cover.living_blind"}, blocking=True)
+    assert _published(mqtt_mock, f"{COMMANDS}/A1B2/blinds/1/stop") == ["1"]
+    assert hass.states.get("cover.living_blind").attributes["current_position"] == 40
+
+
+async def test_a_stationary_cover_is_not_travelling(hass, setup_i3):
+    """Nought is what the direction leaf publishes almost all of the time.
+
+    The vendor documents 1 and 2; a blind that is not moving sits at 0, and a
+    reader that knows only the documented pair would show every settled blind
+    as neither opening nor closing by accident rather than by reading.
+    """
+    await setup_i3(_conf(BLIND))
+    await _payload(hass, "A1B2/blinds/1/position", "50")
+    await _payload(hass, "A1B2/blinds/1/direction", "2")
+    assert hass.states.get("cover.living_blind").state == "closing"
+    await _payload(hass, "A1B2/blinds/1/direction", "0")
+    assert hass.states.get("cover.living_blind").state == "open"
+
+
+async def test_a_cover_with_no_position_yet_does_not_claim_to_be_open(hass, setup_i3):
+    """`is_closed` is None, not False, until the channel has spoken.
+
+    Home Assistant disables the close button on a cover it believes to be
+    closed and the open button on one it believes to be open, so a guess here
+    takes away the control somebody needs on the one occasion it is wrong.
+    """
+    await setup_i3(_conf(BLIND))
+    assert hass.states.get("cover.living_blind").state == "unknown"
+
+
+async def test_a_venetian_blind_tilts_on_the_angle_leaf(hass, setup_i3, mqtt_mock):
+    """The slat angle runs 0-90 on the channel and 0-100 in Home Assistant."""
+    slat = {**BLIND, "unique_id": "i3_A1B2_rot_blinds_1", "object_id": "study_blind",
+            "name": "Study blind",
+            "reads": {"state": "A1B2/rot_blinds/1/position",
+                      "tilt": "A1B2/rot_blinds/1/angle"},
+            "writes": {"command": "A1B2/rot_blinds/1/position",
+                       "tilt": "A1B2/rot_blinds/1/angle"},
+            "options": {"tilt_scale": 90}}
+    await setup_i3(_conf(slat))
+    await _payload(hass, "A1B2/rot_blinds/1/angle", "45")
+    assert hass.states.get("cover.study_blind").attributes["current_tilt_position"] == 50
+    await hass.services.async_call(
+        "cover", "set_cover_tilt_position",
+        {"entity_id": "cover.study_blind", "tilt_position": 100}, blocking=True)
+    assert _published(mqtt_mock, f"{COMMANDS}/A1B2/rot_blinds/1/angle") == ["90"]
+
+
+async def test_a_button_pulses_and_holds_nothing(hass, setup_i3, mqtt_mock):
+    """One publish per press, and no state in between.
+
+    An `out_pulse` channel opens its contact again by itself, so there is
+    nothing to read back - which is the whole argument for a button over a
+    switch that would answer with whatever it was last told.
+    """
+    gate = {"platform": "button", "unique_id": "i3_A1B2_out_pulse_5",
+            "object_id": "gate", "name": "Gate",
+            "writes": {"command": "A1B2/out_pulse/5/set"}}
+    await setup_i3(_conf(gate))
+    assert hass.states.get("button.gate").state == "unknown"
+    await hass.services.async_call("button", "press",
+                                   {"entity_id": "button.gate"}, blocking=True)
+    assert _published(mqtt_mock, f"{COMMANDS}/A1B2/out_pulse/5/set") == ["1"]
+    assert hass.states.get("button.gate").state != "unknown"
+    await _tick(hass, 4)
 
 
 # ── reload and unload ───────────────────────────────────────────────────────
