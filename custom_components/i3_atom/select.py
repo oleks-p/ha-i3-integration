@@ -88,3 +88,14 @@ class I3Select(I3Entity, SelectEntity):
     def _restore(self, last) -> None:
         if last.state in self._attr_options:
             self._current = last.state
+
+    def _restored_payloads(self, last) -> dict[str, str]:
+        """The option back as its payload, for others that read this leaf.
+
+        A selector is usually the one entity with a memory of a coded value -
+        a house mode, say - that a thermostat elsewhere also reads.
+        """
+        if last.state not in self._attr_options:
+            return {}
+        payload = encode(last.state, self._map)
+        return {"state": payload} if payload is not None else {}

@@ -709,6 +709,76 @@ async def test_a_switch_keeps_its_toggle_while_a_command_is_out(hass, setup_i3):
     assert hass.states.get("switch.climate_boost").state == STATE_OFF
 
 
+# ── a leaf two entities read ────────────────────────────────────────────────
+
+HOUSE_MODE = {"platform": "select", "unique_id": "i3_A1B2_var_int_2_mode",
+              "object_id": "climate_mode", "name": "Climate mode",
+              "reads": {"state": "A1B2/var_int/2/value"},
+              "writes": {"command": "A1B2/var_int/2/set"},
+              "options": {"options": ["Off", "Heating", "Cooling"],
+                          "map": {"0": "Off", "1": "Heating", "2": "Cooling"}}}
+
+MASTER = {"platform": "climate", "unique_id": "i3_A1B2_var_float_2_master",
+          "object_id": "master_thermostat", "name": "Master",
+          "reads": {"mode": "A1B2/var_int/2/value",
+                    "setpoint": "A1B2/var_float/2/value"},
+          "writes": {"setpoint": "A1B2/var_float/2/set"},
+          "options": {"modes": ["off", "heat", "cool"], "min_temp": 15,
+                      "max_temp": 30, "temp_step": 0.5,
+                      "mode_map": {"0": "off", "1": "heat", "2": "cool"}}}
+
+
+@pytest.mark.parametrize("order", [(HOUSE_MODE, MASTER), (MASTER, HOUSE_MODE)])
+async def test_a_new_entity_reads_a_leaf_its_neighbour_remembers(hass, setup_i3, order):
+    """The master thermostat was added after the house-mode selector and has
+    no memory of the mode. It read `unknown` beside a selector that knew it,
+    until the controller next changed the mode - a season. Either may load
+    first."""
+    mock_restore_cache(hass, [State("select.climate_mode", "Heating")])
+    await setup_i3(_conf(*order))
+    assert hass.states.get("climate.master_thermostat").state == "heat"
+    assert hass.states.get("select.climate_mode").state == "Heating"
+
+
+async def test_a_live_value_beats_a_lent_one(hass, setup_i3, monkeypatch):
+    mock_restore_cache(hass, [State("select.climate_mode", "Heating")])
+    await _setup_with_early_payload(hass, setup_i3, monkeypatch,
+                                    "A1B2/var_int/2/value", "2",
+                                    _conf(HOUSE_MODE, MASTER))
+    assert hass.states.get("climate.master_thermostat").state == "cool"
+    assert hass.states.get("select.climate_mode").state == "Cooling"
+
+
+async def test_a_lent_value_gives_way_to_the_next_live_one(hass, setup_i3):
+    mock_restore_cache(hass, [State("select.climate_mode", "Heating")])
+    await setup_i3(_conf(HOUSE_MODE, MASTER))
+    await _payload(hass, "A1B2/var_int/2/value", "2")
+    assert hass.states.get("climate.master_thermostat").state == "cool"
+
+
+async def test_a_mode_it_cannot_set_is_the_only_one_it_offers(hass, setup_i3):
+    """Its dialog listed off, heat and cool, and every one failed when picked."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    await setup_i3(_conf(MASTER))
+    await _payload(hass, "A1B2/var_int/2/value", "1")
+    state = hass.states.get("climate.master_thermostat")
+    assert state.attributes["hvac_modes"] == ["heat"]
+    # picking what it already is succeeds and writes nothing
+    await hass.services.async_call("climate", "set_hvac_mode",
+                                   {"entity_id": "climate.master_thermostat",
+                                    "hvac_mode": "heat"}, blocking=True)
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call("climate", "set_hvac_mode",
+                                       {"entity_id": "climate.master_thermostat",
+                                        "hvac_mode": "cool"}, blocking=True)
+    # and the setpoint is still its own to write
+    await hass.services.async_call("climate", "set_temperature",
+                                   {"entity_id": "climate.master_thermostat",
+                                    "temperature": 22.5}, blocking=True)
+    assert hass.states.get("climate.master_thermostat").attributes["temperature"] == 22.5
+
+
 async def test_a_number_writes_plain_decimals_and_restores_its_value(hass, setup_i3, mqtt_mock):
     setpoint = {"platform": "number", "unique_id": "i3_C3D4_var_int_7",
                 "object_id": "dhw_setpoint", "name": "DHW setpoint",

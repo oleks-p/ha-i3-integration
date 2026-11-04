@@ -387,6 +387,28 @@ class Hub:
         self.hass.async_create_task(
             mqtt.async_publish(self.hass, msg.topic, "", qos=1, retain=True))
 
+    @callback
+    def seed(self, point: str, payload: str, source: str) -> None:
+        """Offer a restored value for a leaf nothing live has spoken on yet.
+
+        Restoring is per entity, but a leaf is not: two entities can read one
+        leaf, and only one of them may have a memory of it. A thermostat added
+        today that shows the house mode had none, and read `unknown` beside a
+        house-mode selector that knew perfectly well what the mode was - for
+        as long as the controller went without changing it, which for a house
+        mode is a season.
+
+        So the entity that remembers lends its memory to the leaf. A live
+        payload always wins: one already here is kept, and the next one to
+        arrive replaces this. The lender is not notified of its own loan.
+        """
+        if not payload or point in self.payloads:
+            return
+        self.payloads[point] = payload
+        for unique_id in self._subscribers.get(point, ()):
+            if unique_id != source:
+                self._notify(unique_id, point)
+
     def _notify(self, unique_id: str, point: str | None) -> None:
         for cb in list(self._listeners.get(unique_id, ())):
             cb(point)

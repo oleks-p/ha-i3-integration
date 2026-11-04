@@ -158,6 +158,23 @@ class I3Climate(I3Entity, ClimateEntity):
         return self._mode
 
     @property
+    def _mode_writable(self) -> bool:
+        return "mode" in self._spec.writes or "power" in self._spec.writes
+
+    @property
+    def hvac_modes(self) -> list[HVACMode]:
+        """Every mode it offers - or, where it cannot set one, only its own.
+
+        A thermostat that READS its mode from somewhere else - a master whose
+        mode is the house's - would otherwise be offered the whole list in its
+        dialog, every entry of which fails when picked. Listing the current
+        mode alone leaves nothing to pick that is not already true.
+        """
+        if not self._mode_writable and self._mode is not None:
+            return [self._mode]
+        return self._attr_hvac_modes
+
+    @property
     def current_temperature(self) -> float | None:
         return self._current
 
@@ -194,6 +211,11 @@ class I3Climate(I3Entity, ClimateEntity):
             # told on or off, and which kind of on it does is its own business.
             self._mode = mode
             await self._command("power", "0" if mode == HVACMode.OFF else "1")
+            return
+        if mode == self._mode:
+            # Asking a read-only mode to be what it already is. The dialog
+            # sends this when its only entry is picked, and so does a
+            # set_temperature that names the current mode alongside.
             return
         raise ServiceValidationError(f"{self.entity_id} cannot be switched")
 

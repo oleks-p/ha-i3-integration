@@ -283,10 +283,23 @@ class I3Entity(RestoreEntity):
         """Take state from the restored state. Overridden per platform."""
         raise NotImplementedError
 
+    def _restored_payloads(self, last) -> dict[str, str]:
+        """role -> the raw payload the restored state stands for.
+
+        Lent to the hub for any leaf nothing live has spoken on - see
+        `Hub.seed`. Only an adapter whose state maps back to one payload
+        exactly can answer; the default lends nothing.
+        """
+        return {}
+
     async def _async_restore(self) -> None:
         last = await self.async_get_last_state()
         if last is not None and last.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             self._restore(last)
+            for role, payload in self._restored_payloads(last).items():
+                point = self._spec.reads.get(role)
+                if point is not None:
+                    self._hub.seed(point, payload, self._spec.unique_id)
 
     # ── from the hub ───────────────────────────────────────────────────────
 
