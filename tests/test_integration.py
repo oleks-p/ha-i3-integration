@@ -690,6 +690,25 @@ async def test_a_relay_can_be_a_switch(hass, setup_i3, mqtt_mock):
     assert hass.states.get("switch.pump").state == STATE_OFF
 
 
+async def test_a_switch_keeps_its_toggle_while_a_command_is_out(hass, setup_i3):
+    """An assumed switch is drawn as two buttons instead of a toggle, so the
+    row changed shape on every tap until the echo landed."""
+    boost = {"platform": "switch", "unique_id": "i3_A1B2_var_int_5_boost",
+             "object_id": "climate_boost", "name": "Boost",
+             "reads": {"state": "A1B2/var_int/5/value"},
+             "writes": {"command": "A1B2/var_int/5/set"}}
+    await setup_i3(_conf(boost))
+    await _payload(hass, "A1B2/var_int/5/value", "0")
+    await hass.services.async_call("switch", "turn_on",
+                                   {"entity_id": "switch.climate_boost"}, blocking=True)
+    state = hass.states.get("switch.climate_boost")
+    assert state.state == STATE_ON
+    assert not state.attributes.get(ATTR_ASSUMED_STATE)
+    # and a command the controller never took still goes back to what it said
+    await _tick(hass, 4)
+    assert hass.states.get("switch.climate_boost").state == STATE_OFF
+
+
 async def test_a_number_writes_plain_decimals_and_restores_its_value(hass, setup_i3, mqtt_mock):
     setpoint = {"platform": "number", "unique_id": "i3_C3D4_var_int_7",
                 "object_id": "dhw_setpoint", "name": "DHW setpoint",

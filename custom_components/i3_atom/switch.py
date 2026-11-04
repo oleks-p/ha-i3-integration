@@ -54,6 +54,20 @@ class I3Switch(I3Entity, SwitchEntity):
     def is_on(self) -> bool | None:
         return self._is_on
 
+    @property
+    def assumed_state(self) -> bool:
+        """Never, for a switch, even while a command awaits its echo.
+
+        Home Assistant draws an assumed switch as a pair of lightning-bolt
+        buttons, off and on, instead of the toggle - so every tap turned the
+        row into a different control for the second or so until the
+        controller answered, and back again. Seen on the reference house's
+        climate boost, 2026-11-05. The commanded value is still shown at once
+        and the echo still confirms or overrules it; only the claim to be
+        unsure is dropped, because the one thing it changed was the control.
+        """
+        return False
+
     async def async_turn_on(self, **kwargs) -> None:
         self._is_on = True
         await self._command("command", "0" if self._invert else "1")
