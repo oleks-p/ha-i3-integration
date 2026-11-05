@@ -101,6 +101,7 @@ class I3Climate(I3Entity, ClimateEntity):
         vol.Optional("modes", default=[HVACMode.OFF]): vol.All([HVAC_MODE], vol.Length(min=1)),
         vol.Optional("mode_map"): payload_map(HVAC_MODE),
         vol.Optional("mode_from_presence", default=False): cv.boolean,
+        vol.Optional("show_modes", default=False): cv.boolean,
         vol.Optional("on_mode", default=HVACMode.HEAT): HVAC_MODE,
         vol.Optional("fan_modes"): [word],
         vol.Optional("fan_mode_map"): payload_map(),
@@ -118,6 +119,7 @@ class I3Climate(I3Entity, ClimateEntity):
         self._mode_map: dict[str, HVACMode] = opts.get("mode_map") or {}
         self._fan_mode_map: dict[str, str] = opts.get("fan_mode_map") or {}
         self._from_presence: bool = opts["mode_from_presence"]
+        self._show_modes: bool = opts["show_modes"]
         self._on_mode: HVACMode = opts["on_mode"]
         self._sane = opts.get("sane")
         self._fan_modes: list[str] = list(opts.get("fan_modes") or [])
@@ -169,8 +171,12 @@ class I3Climate(I3Entity, ClimateEntity):
         mode is the house's - would otherwise be offered the whole list in its
         dialog, every entry of which fails when picked. Listing the current
         mode alone leaves nothing to pick that is not already true.
+
+        Unless `show_modes` asks for the whole list: a board that draws the
+        mode buttons read-only, to say which of them the house is in, needs
+        all of them to draw. Picking another is then refused by name.
         """
-        if not self._mode_writable and self._mode is not None:
+        if not self._mode_writable and self._mode is not None and not self._show_modes:
             return [self._mode]
         return self._attr_hvac_modes
 
@@ -217,7 +223,9 @@ class I3Climate(I3Entity, ClimateEntity):
             # sends this when its only entry is picked, and so does a
             # set_temperature that names the current mode alongside.
             return
-        raise ServiceValidationError(f"{self.entity_id} cannot be switched")
+        raise ServiceValidationError(
+            f"{self.entity_id} cannot be switched: its mode is read from "
+            f"elsewhere and decided there")
 
     async def async_set_temperature(self, **kwargs) -> None:
         # Home Assistant passes a mode given alongside the temperature through

@@ -779,6 +779,26 @@ async def test_a_mode_it_cannot_set_is_the_only_one_it_offers(hass, setup_i3):
     assert hass.states.get("climate.master_thermostat").attributes["temperature"] == 22.5
 
 
+async def test_show_modes_lists_every_mode_and_still_writes_none(hass, setup_i3, mqtt_mock):
+    """A board that draws the mode buttons read-only - the heat pump decides
+    the season - needs all three to draw, with the current one lit."""
+    from homeassistant.exceptions import ServiceValidationError
+
+    shown = {**MASTER, "options": {**MASTER["options"], "show_modes": True}}
+    await setup_i3(_conf(shown))
+    await _payload(hass, "A1B2/var_int/2/value", "1")
+    state = hass.states.get("climate.master_thermostat")
+    assert state.attributes["hvac_modes"] == ["off", "heat", "cool"]
+    assert state.state == "heat"
+    mqtt_mock.async_publish.reset_mock()
+    with pytest.raises(ServiceValidationError, match="decided there"):
+        await hass.services.async_call("climate", "set_hvac_mode",
+                                       {"entity_id": "climate.master_thermostat",
+                                        "hvac_mode": "cool"}, blocking=True)
+    assert not mqtt_mock.async_publish.called
+    assert hass.states.get("climate.master_thermostat").state == "heat"
+
+
 async def test_a_number_writes_plain_decimals_and_restores_its_value(hass, setup_i3, mqtt_mock):
     setpoint = {"platform": "number", "unique_id": "i3_C3D4_var_int_7",
                 "object_id": "dhw_setpoint", "name": "DHW setpoint",
