@@ -111,7 +111,11 @@ class I3Climate(I3Entity, ClimateEntity):
         vol.Optional("sane"): SANE,
     })
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # Home Assistant 2026.11 reads the `native_` names and deprecates the
+    # others; the older releases this still supports read only those. With
+    # both on the class, 2026.11 uses the native ones and warns of nothing.
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_temperature_unit = _attr_native_temperature_unit
 
     def __init__(self, hub, spec, *, claimed: bool = True) -> None:
         super().__init__(hub, spec, claimed=claimed)
@@ -181,20 +185,24 @@ class I3Climate(I3Entity, ClimateEntity):
         return self._attr_hvac_modes
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         return self._current
+    current_temperature = native_current_temperature
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         return None if self._dual else self._setpoint
+    target_temperature = native_target_temperature
 
     @property
-    def target_temperature_low(self) -> float | None:
+    def native_target_temperature_low(self) -> float | None:
         return self._low if self._dual else None
+    target_temperature_low = native_target_temperature_low
 
     @property
-    def target_temperature_high(self) -> float | None:
+    def native_target_temperature_high(self) -> float | None:
         return self._high if self._dual else None
+    target_temperature_high = native_target_temperature_high
 
     @property
     def fan_mode(self) -> str | None:
