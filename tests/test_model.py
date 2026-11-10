@@ -195,6 +195,45 @@ def test_an_unrelated_entity_is_never_deleted_to_make_room():
     assert "hue" in plan[0].reason
 
 
+def test_a_point_that_moved_takes_its_name_back_from_its_old_address():
+    """Moving a channel to another controller changes its unique_id. The row
+    of the old address is ours and nothing declares it any more, so it is the
+    same entity's previous declaration: it goes, and the new row, created on a
+    generated id the first time round, is renamed onto the name."""
+    specs = [_spec("climate", "mqtt_i3_C3D4_comparator_1_floor_max", "living_floor_max")]
+    rows = [
+        model.RegistryRow("climate.living_floor_max", "i3_atom",
+                          "mqtt_i3_A1B2_comparator_5_floor_max"),
+        model.RegistryRow("climate.living_room_floor_heating", "i3_atom",
+                          "mqtt_i3_C3D4_comparator_1_floor_max"),
+    ]
+    plan = model.plan_entity_id_claims(specs, rows, "i3_atom")
+    assert [(c.action, c.entity_id) for c in plan] == [
+        ("remove", "climate.living_floor_max"),
+        ("rename", "climate.living_room_floor_heating"),
+    ]
+    assert plan[1].new_entity_id == "climate.living_floor_max"
+
+
+def test_a_moved_point_seen_for_the_first_time_is_created_on_its_name():
+    """The same move with the new row not yet in the registry: only the old
+    row goes, and the entity is then created on the freed id."""
+    specs = [_spec("select", "mqtt_i3_C3D4_var_int_36_mode", "climate_mode")]
+    rows = [model.RegistryRow("select.climate_mode", "i3_atom", "mqtt_i3_A1B2_var_int_13_mode")]
+    assert [(c.action, c.entity_id) for c in model.plan_entity_id_claims(specs, rows, "i3_atom")] == [
+        ("remove", "select.climate_mode")]
+
+
+def test_our_own_row_that_is_still_declared_is_never_removed():
+    """A row of ours that some spec still declares is a live entity, not an
+    old address. Whatever else happens to the name, that row is not deleted."""
+    specs = [_spec("light", "uid_a", "porch"), _spec("light", "uid_b", "porch_lamp")]
+    rows = [model.RegistryRow("light.porch", "i3_atom", "uid_b")]
+    plan = model.plan_entity_id_claims(specs, rows, "i3_atom")
+    assert not [c for c in plan if c.action == "remove"]
+    assert ("conflict", "light.porch") in [(c.action, c.entity_id) for c in plan]
+
+
 def test_the_claim_is_per_domain_not_per_light():
     """The same identity problem applies to every platform this integration
     presents. Hard-coding one domain is how the second platform silently ships

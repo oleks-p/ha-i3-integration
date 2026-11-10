@@ -472,11 +472,17 @@ def plan_entity_id_claims(
     The old row has to go before the new entity is created. That is a decision
     about identity rather than about Home Assistant, so it is made here.
 
-    Three cases, in this order:
+    Four cases, in this order:
 
       * another platform holds a row for one of our unique_ids: remove it. It
         is a previous declaration of the same physical point and nothing will
         update it again.
+      * one of our own rows holds the entity_id we need under a unique_id that
+        nothing declares any more: remove it. The point moved to another
+        channel or controller, its address and with it its unique_id changed,
+        and the row left behind is this entity's previous declaration.
+        Without this, every moved entity comes back on a generated id while
+        the dead row keeps the name that dashboards and automations use.
       * something holds the entity_id we need and is not this entity: leave it
         alone and report the conflict. A name collision with an unrelated
         entity is a configuration mistake, and deleting somebody's entity to
@@ -491,6 +497,8 @@ def plan_entity_id_claims(
         if r.platform != domain:
             foreign_by_uid.setdefault(r.unique_id, []).append(r)
 
+    declared = {s.unique_id for s in specs}
+
     plan: list[Claim] = []
     for spec in specs:
         wanted = f"{spec.platform}.{spec.object_id}"
@@ -500,6 +508,12 @@ def plan_entity_id_claims(
                               reason=f"{row.platform} declared {spec.unique_id} before"))
 
         holder = by_id.get(wanted)
+        if (holder is not None and holder.platform == domain
+                and holder.unique_id not in declared):
+            plan.append(Claim("remove", wanted,
+                              reason=f"ours at its old address {holder.unique_id}, "
+                                     "which nothing declares any more"))
+            holder = None
         if holder is not None and holder.unique_id != spec.unique_id:
             plan.append(Claim("conflict", wanted,
                               reason=f"held by {holder.platform}/{holder.unique_id}"))
